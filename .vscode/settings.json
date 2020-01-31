@@ -1,5 +1,6 @@
 {
     "files.associations": {
         "vector": "cpp"
-    }
+    },
+    "python.pythonPath": "/Users/wjy/opt/anaconda3/bin/python"
 }
