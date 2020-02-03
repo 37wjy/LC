@@ -3,15 +3,23 @@
  *
  * [210] Course Schedule II
  */
+<<<<<<< HEAD
 #include <vector>
 #include <iostream>
 using namespace std;
+=======
+
+>>>>>>> f859c03ac72d38c2b0fac73b402e3b401babe11a
 // @lc code=start
 class Solution {
 public:
     vector<int> findOrder(int numCourses, vector<vector<int>>& prerequisites) {
+<<<<<<< HEAD
         
         graph g = buildGraph(numCourses, prerequisites); //存前置课程
+=======
+        graph g = buildGraph(numCourses, prerequisites);
+>>>>>>> f859c03ac72d38c2b0fac73b402e3b401babe11a
         vector<int> degrees = computeIndegrees(g);
         vector<int> order;
         for (int i = 0; i < numCourses; i++) {
@@ -35,10 +43,17 @@ public:
 private:
     typedef vector<vector<int>> graph;
     
+<<<<<<< HEAD
     graph buildGraph(int numCourses, vector<vector<int>>& prerequisites) {
         graph g(numCourses);
         for (auto p : prerequisites) {
             g[p[1]].push_back(p[0]);
+=======
+    graph buildGraph(int numCourses, vector<vector<int, int>>& prerequisites) {
+        graph g(numCourses);
+        for (auto p : prerequisites) {
+            g[p.second].push_back(p.first);
+>>>>>>> f859c03ac72d38c2b0fac73b402e3b401babe11a
         }
         return g;
     }
@@ -53,6 +68,7 @@ private:
         return degrees;
     }
 };
+<<<<<<< HEAD
    
 
 int main(int argc, char const *argv[])
@@ -63,5 +79,7 @@ int main(int argc, char const *argv[])
     return 0;
 }
 
+=======
+>>>>>>> f859c03ac72d38c2b0fac73b402e3b401babe11a
 // @lc code=end
 
