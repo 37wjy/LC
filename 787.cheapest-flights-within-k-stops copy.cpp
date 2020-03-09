@@ -1,15 +1,3 @@
-/*
- * @lc app=leetcode id=787 lang=cpp
- *
- * [787] Cheapest Flights Within K Stops
- */
-#include <iostream>
-#include <queue>
-#include <vector>
-using namespace std;
-
-
-// @lc code=start
 class Solution {
 public:
     //bellman ford.
@@ -28,14 +16,3 @@ public:
         return c[sink] == 1e8 ? -1 : c[sink];
     }
 };
-
-/* int main(int argc, char const *argv[])
-{
-    vector<vector<int>> fl{{0,1,100},{1,2,100},{0,2,500}};
-    Solution s;
-    cout<<s.findCheapestPrice(3,fl,0,2,1);
-    return 0;
-}
- */
-// @lc code=end
-
