@@ -1,0 +1,17 @@
+mkdir 10019_base_bg
+mkdir 10019_base_fnt
+mkdir 10019_base_img
+mkdir 10019_base_img_17
+mkdir 10019_cb_bg
+mkdir 10019_cb_darker
+mkdir 10019_cb_resault
+mkdir 10019_free_bg
+mkdir 10019_free_img
+mkdir 10019_free_pop
+mkdir 10019_major_symbol_kuang
+mkdir 10019_pay_table
+mkdir 10019_pb
+mkdir 10019_pb_img_11
+mkdir 10019_superwin
+mkdir 10019_symbols
+mkdir 10019_wheel

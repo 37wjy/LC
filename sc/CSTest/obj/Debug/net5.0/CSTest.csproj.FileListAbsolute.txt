@@ -1,0 +1,15 @@
+/Users/wjy/Desktop/project/sc/CSTest/bin/Debug/net5.0/CSTest.deps.json
+/Users/wjy/Desktop/project/sc/CSTest/bin/Debug/net5.0/CSTest.runtimeconfig.json
+/Users/wjy/Desktop/project/sc/CSTest/bin/Debug/net5.0/CSTest.runtimeconfig.dev.json
+/Users/wjy/Desktop/project/sc/CSTest/bin/Debug/net5.0/CSTest.dll
+/Users/wjy/Desktop/project/sc/CSTest/bin/Debug/net5.0/ref/CSTest.dll
+/Users/wjy/Desktop/project/sc/CSTest/bin/Debug/net5.0/CSTest.pdb
+/Users/wjy/Desktop/project/sc/CSTest/obj/Debug/net5.0/CSTest.csprojAssemblyReference.cache
+/Users/wjy/Desktop/project/sc/CSTest/obj/Debug/net5.0/CSTest.GeneratedMSBuildEditorConfig.editorconfig
+/Users/wjy/Desktop/project/sc/CSTest/obj/Debug/net5.0/CSTest.AssemblyInfoInputs.cache
+/Users/wjy/Desktop/project/sc/CSTest/obj/Debug/net5.0/CSTest.AssemblyInfo.cs
+/Users/wjy/Desktop/project/sc/CSTest/obj/Debug/net5.0/CSTest.csproj.CoreCompileInputs.cache
+/Users/wjy/Desktop/project/sc/CSTest/obj/Debug/net5.0/CSTest.dll
+/Users/wjy/Desktop/project/sc/CSTest/obj/Debug/net5.0/ref/CSTest.dll
+/Users/wjy/Desktop/project/sc/CSTest/obj/Debug/net5.0/CSTest.pdb
+/Users/wjy/Desktop/project/sc/CSTest/obj/Debug/net5.0/CSTest.genruntimeconfig.cache

@@ -1,0 +1,7 @@
+sh CopyNew.sh 10022
+
+git fetch;
+git stash;
+git checkout origin/10022 Assets/AssetsPackage/Themes/Theme10022
+git stash pop;
+echo "from branch origin/new copy effect done";

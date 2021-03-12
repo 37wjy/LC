@@ -1,0 +1,8 @@
+ssh-keygen -t rsa -C wangqi@bolegames.com
+sudo chmod 700 id_rsa
+
+sudo ssh-keygen -y -f id_rsa > id_rsa.pub
+
+
+git clone -b dev git@192.168.0.10:/unicorn/UnicornUnity.git
+git clone git@192.168.0.10:/unicorn/UnicornDesign.git

@@ -1,0 +1,468 @@
+--[[
+-- added by sunwenming @ 2018-09-20
+-- modify by hejun @ 2020-05-01 msg
+--]]
+
+local SlotGameBoard = BaseClass("SlotGameBoard", Updatable)
+local Helper = require 'XLua.Common.helper'
+local Messenger = require "Framework.Common.Messenger"
+local SlotGameReel = require "GameThemeEngine.SlotGameReel"
+local BoardHandler = require "GameThemeEngine.BoardHandler"
+
+function SlotGameBoard.__init(cls_obj, theme_view, board_config, board_name)
+	cls_obj.themeView = theme_view
+	cls_obj.configLua = board_config
+	if board_name then
+		cls_obj.boardHandlers = theme_view.boardHandlers[board_name]
+		cls_obj.behaviorTrees = theme_view.behaviorTrees[board_name]
+		cls_obj.gameObject = theme_view.boardTrans[board_name].gameObject
+	else
+		cls_obj.boardHandlers = theme_view.boardHandlers
+		cls_obj.behaviorTrees = theme_view.behaviorTrees
+		cls_obj.gameObject = theme_view.boardTrans.gameObject
+	end
+
+	cls_obj.baseHandler = BoardHandler.New(cls_obj)
+	cls_obj.transform = cls_obj.gameObject.transform
+
+	cls_obj.dataMsgCenter = Messenger.New()
+	cls_obj:OnCreate()
+
+	cls_obj.pause = false
+	cls_obj.cacheOneStepToNext = false
+
+	cls_obj.StopFirstFunc = cls_obj.StopFirstReelGroupEachColumnReels
+	cls_obj.StopNextFunc = cls_obj.StopNextReelGroupEachColumnReels
+
+	if cls_obj.configLua.BOARD_TURN_TYPE == 1 then
+		cls_obj.StopFirstFunc = cls_obj.StopFirstReelGroupEachCustomGroupReels
+		cls_obj.StopNextFunc = cls_obj.StopNextReelGroupEachCustomGroupReels
+		cls_obj.custom_stop_group = cls_obj.configLua.CUSTOM_STOP_GROUP
+	end
+end
+
+-- 析构函数，别重写，资源释放放OnDispose
+function SlotGameBoard.__delete(cls_obj)
+	cls_obj:OnDestroy()
+end
+
+-- 创建
+function SlotGameBoard:OnCreate()
+	self.spinning = false
+	self.spinForever = false
+	self.spinDeltaTime = 0
+	self.specialAniTime = 0
+	self.quickStopReel = 1
+	self.currentBehaviorStep = 0
+
+	-- 是否继续播放win line的标记，在ClearAllBoardEffects的时候会变false，PlayWinPoseEffects的时候变true
+	self.playWinLineEffects = false
+
+	-- play special symbol animation, such as sctter, bonus or collects
+	self.board_effect_layer1 = UIUtil.FindTrans(self.transform, "board/board_effect_layer1")
+	self.board_effect_layer2 = UIUtil.FindTrans(self.transform, "board/board_effect_layer2")
+	self.board_top_effect_layer1 = UIUtil.FindTrans(self.transform, "board_top_effect_layer1")
+	self.board_top_effect_layer2 = UIUtil.FindTrans(self.transform, "board_top_effect_layer2")
+
+	-- 初始symbol缓存池
+	GameObjectPoolByPrefab:GetInstance():InitSymbolPool(self)
+
+	-- 注册行为树处理函数
+	if self.behaviorTrees then
+		-- 移除
+		for _, v in ipairs (self.behaviorTrees) do
+			if v.listen then
+				self:RemoveListener(v.behavior, v.handler)
+			end
+		end
+		-- 添加
+		for _, v in ipairs (self.behaviorTrees) do
+			if v.listen then
+				self:AddListener(v.behavior, v.handler, self.themeView, v.param)
+			end
+		end	
+	end
+	-- 初始转轴
+	self.reelCol = table.length(self.configLua.REELS) -- 转轴列数
+	self.reelsSymbolTable = self.configLua.BOARD_REELS_SYMBOL_LIST[1] -- 转轴symbol配置
+	self.reelsObjList = {} -- 转轴包装对象
+	for col, reel_config in ipairs(self.configLua.REELS) do
+		self.reelsObjList[col] = SlotGameReel.New(self, reel_config, col)
+	end
+	-- 回调特殊symbol处理器
+	self.baseHandler:ReplaceInitSymbols()
+end
+
+function SlotGameBoard:OnDestroy()
+	self:ClearAllBoardEffects()
+	
+	-- 销毁转轴
+	for col, _ in ipairs(self.reelsObjList) do
+		self.reelsObjList[col]:Delete()
+	end
+
+	self.quickStopReel = 1
+	self.themeView = nil
+	self.configLua = nil
+	self.behaviorTrees = nil
+	self.boardHandlers = nil
+	
+	if self.dataMsgCenter then
+		self.dataMsgCenter:Delete()
+		self.dataMsgCenter = nil
+	end
+	if self.baseHandler then
+		self.baseHandler:Delete()
+		self.baseHandler = nil
+	end
+end
+
+function SlotGameBoard:AddListener(e_type, e_listener, ...)
+	if self.dataMsgCenter then
+		self.dataMsgCenter:AddListener(e_type, e_listener, ...)
+	end
+end
+
+-- 发送消息
+function SlotGameBoard:Broadcast(e_type, ...)
+	if self.dataMsgCenter then
+		self.dataMsgCenter:Broadcast(e_type, ...)
+	end
+end
+
+-- 注销消息
+function SlotGameBoard:RemoveListener(e_type, e_listener)
+	if self.dataMsgCenter then
+		self.dataMsgCenter:RemoveListener(e_type, e_listener)
+	end
+end
+
+-- 每一帧都在执行，通过，控制is_stop来控制轮轴的旋转
+function SlotGameBoard:Update() 
+	if self.pause then return end
+	-- 更新reels
+	self:WalkReels(SlotGameReel.Update) 
+	if not self.spinning then return end 
+
+	if self.activeReels == -1 then
+		if self.spinForever then return end
+		self.spinDeltaTime = self.spinDeltaTime + Time.deltaTime
+		if (self.themeView.ctrl:IsValidSpin() or self.themeView.ctrl:IsValidRespin()) and self.spinDeltaTime >= (self.configLua.BOARD_SPIN_INFO.maxReelDuration + self.specialAniTime) then
+			self:StopFirstFunc()
+		end
+	else
+		self:StopNextFunc()
+		local complete = true
+		for _, reel in ipairs(self.reelsObjList) do
+			if not reel:Completed() then
+				complete = false
+				break
+			end
+		end
+		if complete then
+			self.spinning = false
+			self.baseHandler:AllReelsStopCompleteHandler()
+		end
+	end
+end
+
+-- EachColumn
+function SlotGameBoard:StopFirstReelGroupEachColumnReels()
+	self.activeReels = 1
+	self.reelsObjList[self.activeReels]:Stop()
+end
+
+function SlotGameBoard:StopNextReelGroupEachColumnReels()
+	if self.activeReels < self.reelCol then
+		if self.reelsObjList[self.activeReels]:TriggerNextReelToStop() then
+			self.activeReels = self.activeReels + 1
+			if self.activeReels <= self.reelCol then
+				self.reelsObjList[self.activeReels]:Stop()
+			end
+		end
+	end
+end
+
+-- CustomGroup
+function SlotGameBoard:StopFirstReelGroupEachCustomGroupReels()
+	self.activeReels = 1
+	local reels_stop_list = self.custom_stop_group[self.activeReels]
+	for k,v in pairs(reels_stop_list) do
+		self.reelsObjList[v+1]:Stop()
+	end
+end
+
+function SlotGameBoard:StopNextReelGroupEachCustomGroupReels()
+	local trigger_next = false
+	local mask_reel = nil
+	for i = #self.custom_stop_group[self.activeReels] ,1,-1 do
+		if not self.reelsObjList[self.custom_stop_group[self.activeReels][i]+1].holding then
+			mask_reel = self.reelsObjList[self.custom_stop_group[self.activeReels][i]+1]
+			break
+		end
+	end 
+	if mask_reel then
+		trigger_next = mask_reel:TriggerNextReelToStop()
+	else
+		trigger_next = true
+	end
+	if trigger_next then
+		CS.AudioController.Play("dragon_reel_stop")
+		if self.activeReels + 1 <= #self.custom_stop_group then
+			self.activeReels = self.activeReels + 1
+			local reels_stop_list = self.custom_stop_group[self.activeReels]
+			for k,v in pairs(reels_stop_list) do
+				self.reelsObjList[v+1]:Stop()
+			end
+		end
+	end
+end
+
+function SlotGameBoard:IsSpinning()
+	return self.spinning
+end
+
+function SlotGameBoard:SpinForever(forever)
+	self.spinForever = forever
+	if self.themeView then
+		self.themeView.ctrl:OnSpinForever(self.spinForever)
+	end
+end
+
+function SlotGameBoard:Pause()
+	self.pause = true
+end
+
+function SlotGameBoard:Resume()
+	self.pause = false
+	if self.cacheOneStepToNext then
+		self:Step()
+		self.cacheOneStepToNext = false
+	end
+end
+
+function SlotGameBoard:ClearAllBoardEffects()
+	self.playWinLineEffects = false
+	if self.themeView then coroutine.stopwaiting(self.themeView.winLinesCoroutine) end
+	EffectsManager:GetInstance():RemoveEffectByParent(self.board_effect_layer1)
+	EffectsManager:GetInstance():RemoveEffectByParent(self.board_effect_layer2)
+	EffectsManager:GetInstance():RemoveEffectByParent(self.board_top_effect_layer1)
+	EffectsManager:GetInstance():RemoveEffectByParent(self.board_top_effect_layer2)
+end
+
+----------------------------------------------reel----------------------------------------------
+function SlotGameBoard:WalkReels(func)
+	if not self.reelsObjList then return end
+	for _, reel in ipairs(self.reelsObjList) do
+		func(reel)
+	end
+end
+
+-- 根据结果刷新每列symbol
+function SlotGameBoard:RefershReelSymbolByResult()
+	self:WalkReels(SlotGameReel.RefershReelSymbolByResult)
+end
+
+-- 获取指定行列的reel对象
+function SlotGameBoard:GetReelByPosition(col)
+	return self.reelsObjList[col]
+end
+
+-- 获取指定行列的symbol对象
+function SlotGameBoard:GetSymbolByPosition(col, row)
+	return self.reelsObjList[col].symbols[row]
+end
+
+-- 重置转轴配置表
+function SlotGameBoard:ResetReelsSymbolTable(table_id)
+	self.reelsSymbolTable = self.configLua.BOARD_REELS_SYMBOL_LIST[table_id]
+end
+
+-- 触发激励加速
+function SlotGameBoard:TriggerNextReelStopDelay(col)
+	if not self.speedupReels then return false end
+	if table.contains(self.speedupReels, col + 1) then
+		local next_reel = self:GetReelByPosition(col + 1)
+		if not next_reel.holding and not next_reel.fastStopping then return true end
+	end
+	return false
+end
+
+---------------------------------------------------------------BehaviorTree----------------------------------------------------------------------------------
+--[[ function SlotGameBoard:Step()
+	coroutine.startcoroutine("C_SlotGameBoard", "Step", function()
+		coroutine.waitforfixedupdate()
+		self:StepToNextSequence()
+	end)
+end ]]
+
+function SlotGameBoard:Step()
+	coroutine.startcoroutine("C_SlotGameBoard", "Step", function()
+		coroutine.waitforfixedupdate()
+
+		if self.pause then
+			self.cacheOneStepToNext = true
+			return
+		end
+
+		self.currentBehaviorStep = self.currentBehaviorStep + 1
+		if self.currentBehaviorStep > #self.behaviorTrees then
+			self.currentBehaviorStep = 0
+			self:ProcessBehaviorFinish()
+			return
+		end
+
+		if Config.Debug and Config.Debug_Theme_BehaviorTree then
+			Logger.Log(" StepToNextSequence Broadcast [" .. self.gameObject.name .. "] [".. self.currentBehaviorStep .. "]  [" .. self.behaviorTrees[self.currentBehaviorStep].behavior .. "]")
+		end
+
+		local node = self.behaviorTrees[self.currentBehaviorStep]
+		if node then
+			if node.pushcontext then
+				self.themeView:PushRunningStack()
+			end
+
+			if node.popcontext then
+				self.themeView:PopRunningStack()
+			end
+
+			if Config.Debug and Config.Debug_Theme_BehaviorTree then
+				Logger.Log("StepToNextSequence: [" .. node.behavior .. "]")
+			end
+
+			if node.selector then
+				node.selector(self.themeView, node.params)
+			elseif node.handler then
+				node.handler(self.themeView, node.params)
+			elseif node.defaultSaveHandler then
+				node.defaultSaveHandler(self.themeView, node.params, node.behavior)
+			else
+				if Config.Debug and Config.Debug_Theme_BehaviorTree then
+					Logger.LogError("board msg Sequence error " .. node.behavior)
+				end
+			end
+		end
+	end)
+end
+
+function SlotGameBoard:ProcessBehaviorFinish()
+	self.currentBehaviorStep = 0
+	self.themeView.ctrl:ProcessBehaviorFinish()
+	if Config.Debug and Config.Debug_Theme_BehaviorTree then
+		Logger.Log("Process Behavior Finish")
+	end
+end
+
+function SlotGameBoard:SwitchBehaviorTo(behavior)
+	for k, v in ipairs(self.behaviorTrees) do
+		if behavior == v.behavior then
+			self.currentBehaviorStep = k - 1
+			break
+		end
+	end
+	self:Step()
+end
+
+function SlotGameBoard:SwitchBehaviorToNext(behavior)
+	if behavior ~= nil then
+		for k, v in ipairs(self.behaviorTrees) do
+			if behavior == v.behavior then
+				self.currentBehaviorStep = k
+				break
+			end
+		end
+	end
+	Logger.Log("currentSpinProcessStep 1")
+	self:Step()
+end
+
+function SlotGameBoard:RestoreBehaviorTo(behavior)
+    for k, v in ipairs(self.behaviorTrees) do
+		if behavior == v.behavior then
+			self.currentBehaviorStep = k - 1
+			self:RestoreToNextSequence()
+			break
+		end
+	end
+end
+
+function SlotGameBoard:RestoreToNextSequence()
+	if self.pause then
+		self.cacheOneStepToNext = true
+		return
+	end
+
+	self.currentBehaviorStep = self.currentBehaviorStep + 1
+	if self.currentBehaviorStep > #self.behaviorTrees then
+		self.currentBehaviorStep = 0
+		self:ProcessBehaviorFinish()
+		return
+	end
+
+	if Config.Debug and Config.Debug_Theme_BehaviorTree then
+		Logger.Log("RestoreToNextSequence Broadcast " .. self.gameObject.name .. " ".. self.currentBehaviorStep .. self.behaviorTrees[self.currentBehaviorStep].behavior)
+	end
+
+	local node = self.behaviorTrees[self.currentBehaviorStep]
+	if node then
+		if node.restoreHandler then
+			node.restoreHandler(self.themeView, node.params)
+		else
+			Logger.LogError("board restore Sequence error " .. node.behavior)
+		end
+	end
+end
+
+function SlotGameBoard:RestoreBehaviorStepToZero()
+	self.currentBehaviorStep = 0
+end
+
+function SlotGameBoard:OnSelectorResult(result)
+	local node = self.behaviorTrees[self.currentBehaviorStep]
+	if result then
+		self:SwitchBehaviorTo(node.yes)
+		return true
+	else
+		self:SwitchBehaviorTo(node.no)
+		return true
+	end
+end
+
+function SlotGameBoard:ResetBehaviorStepTo(new_behavior)
+	if type(new_behavior) == "number" then
+		self.currentBehaviorStep = newpos
+		return self.currentBehaviorStep
+	elseif type(new_behavior) == "string" then
+		for k, v in ipairs(self.behaviorTrees) do
+			if new_behavior == v.behavior then
+				self.currentBehaviorStep = k
+				return self.currentBehaviorStep
+			end
+		end
+	end
+end
+
+----------------------------------------------other----------------------------------------------
+function SlotGameBoard:GetBoardLayerObject(layer, symbol)
+	if layer == CS.SlotGameEngine.EffectLayer.OnSymbol_Layer then
+		return symbol
+	elseif layer == CS.SlotGameEngine.EffectLayer.Board_Effect_Layer1 then
+		return self.board_effect_layer1 or symbol
+	elseif layer == CS.SlotGameEngine.EffectLayer.Board_Effect_Layer2 then
+		return self.board_effect_layer2 or symbol
+	elseif layer == CS.SlotGameEngine.EffectLayer.Board_Top_Effect_Layer1 then
+		return self.board_top_effect_layer1 or symbol
+	elseif layer == CS.SlotGameEngine.EffectLayer.Board_Top_Effect_Layer2 then
+		return self.board_top_effect_layer2
+	elseif layer == CS.SlotGameEngine.EffectLayer.OnBoard_Layer then
+		return self.transform
+	else
+		return UIManager:GetInstance():GetLayer(UILayers.TopLayer).transform
+	end	
+end
+
+function SlotGameBoard:Shake(duration, strength, vibrato, randomness)
+	self.transform:DOShakePosition(duration, strength, vibrato, randomness, false)
+end
+
+return SlotGameBoard
